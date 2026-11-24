@@ -22,7 +22,7 @@ from dify.setup_kb import load_state, save_state  # noqa: E402
 TOOLS = {
     "zhibei_draw_quiz": {
         "dsl": "zhibei_draw_quiz.yml", "label": "智备抽题",
-        "description": "从 1710 道华为 AI 认证真题中按考点/题型/关键词抽题。返回 questions（不含答案的题目文本）与 "
+        "description": "从华为 AI 认证练习题库按考点、题型或关键词抽题。返回 questions（不含答案的题目文本）与 "
                        "quiz_code（测验码，判分时原样传给 zhibei_grade）；error 非空表示没抽到题。",
         "params": {"topic": "考点，可模糊，如 CANN、MindSpore、昇腾、深度学习；不限则留空",
                    "qtype": "题型：单选题/多选题/判断题/填空题/连线题；不限则留空",

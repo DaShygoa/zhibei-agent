@@ -1,7 +1,7 @@
 """把 dify/kb_docs 导入 Dify 知识库（Knowledge Service API）。
 
 python -m dify.setup_kb [--reset]
-- 通过控制台创建（或复用）知识库「智备-华为AI认证真题库」与知识库 API Key；
+- 通过控制台创建或复用智备知识库与 API Key；
 - 创建元数据字段 topic / qtype；
 - 用 create-by-text 上传每个文档：自定义分隔符 @@@@，一题一段，高质量索引（bge-m3 向量 + 全文混合检索）；
 - 批量给文档写入 topic / qtype 元数据；
@@ -10,7 +10,6 @@ python -m dify.setup_kb [--reset]
 from __future__ import annotations
 
 import json
-import os
 import sys
 import time
 from pathlib import Path
@@ -20,11 +19,12 @@ import requests
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from dify.console import Console  # noqa: E402
+from zhibei.config import settings  # noqa: E402
 
-API = os.getenv("DIFY_API_BASE", "http://localhost/v1").rstrip("/")
+API = settings.dify_api_base
 DOCS = Path(__file__).parent / "kb_docs"
 STATE = Path(__file__).parent / "state.json"
-KB_NAME = "智备-华为AI认证真题库"
+KB_NAME = "智备 · 华为 AI 认证练习题库"
 EMBED_PROVIDER, EMBED_MODEL = "langgenius/ollama/ollama", "bge-m3"
 # 混合检索：向量（语义）+ 全文（关键词）加权，无需额外的 Rerank 模型
 RETRIEVAL = {"search_method": "hybrid_search", "reranking_enable": False, "reranking_mode": "weighted_score",
@@ -33,8 +33,7 @@ RETRIEVAL = {"search_method": "hybrid_search", "reranking_enable": False, "reran
                                             "embedding_model_name": EMBED_MODEL},
                          "keyword_setting": {"keyword_weight": 0.5}},
              "top_k": 10, "score_threshold_enabled": False, "score_threshold": 0}
-KB_DESC = ("华为 ICT 认证（HCIA-AI / HCIP-AI Solution，昇腾 AI 全栈）1710 道真题，每段一道题，含题干、选项、答案与解析。"
-           "用于讲解 AI 基础、深度学习、大模型、MindSpore、昇腾处理器、CANN、推理部署等知识点时检索依据。")
+KB_DESC = "华为 AI 认证备考练习题，按考点和题型组织，每段一道题，含题干、选项、答案与解析。"
 
 
 def load_state() -> dict:
@@ -48,6 +47,9 @@ def save_state(**kw) -> dict:
 
 
 def main() -> None:
+    manifest = json.loads((DOCS / "manifest.json").read_text(encoding="utf-8"))
+    if not manifest:
+        raise ValueError("题库为空，请先导入试题并运行 dify.export_kb。")
     c = Console()
     st = load_state()
 
@@ -69,7 +71,7 @@ def main() -> None:
     key = st.get("dataset_api_key")
     if not key:
         key = c.post("/datasets/api-keys")["token"]
-    save_state(dataset_id=ds_id, dataset_api_key=key)
+    save_state(dataset_api_key=key)
     H = {"Authorization": f"Bearer {key}"}
 
     def api(method, path, **kw):
@@ -88,7 +90,6 @@ def main() -> None:
     # 4. 上传文档（已存在同名文档则跳过）
     have = {d["name"]: d["id"] for d in api("GET", f"/datasets/{ds_id}/documents",
                                             params={"page": 1, "limit": 100})["data"]}
-    manifest = json.loads((DOCS / "manifest.json").read_text(encoding="utf-8"))
     process_rule = {"mode": "custom", "rules": {
         "pre_processing_rules": [{"id": "remove_extra_spaces", "enabled": True},
                                  {"id": "remove_urls_emails", "enabled": False}],
@@ -125,12 +126,22 @@ def main() -> None:
     # 6. 等待索引完成
     for _ in range(300):
         docs = api("GET", f"/datasets/{ds_id}/documents", params={"page": 1, "limit": 100})["data"]
+        failed = [d["name"] for d in docs if d.get("indexing_status") == "error"]
+        if failed:
+            raise RuntimeError(f"知识库文档索引失败：{', '.join(failed)}")
         pending = [d["name"] for d in docs if d.get("indexing_status") != "completed"]
         if not pending:
             break
         time.sleep(3)
-    total_segments = sum(d.get("segment_count") or 0 for d in docs)
-    print(f"indexed: {len(docs)} documents, {total_segments} segments, pending={pending[:5]}")
+    else:
+        raise RuntimeError(f"仍有 {len(pending)} 个文档待索引，请稍后重试。")
+
+    total_segments = 0
+    for doc in docs:
+        segments = api("GET", f"/datasets/{ds_id}/documents/{doc['id']}/segments",
+                       params={"page": 1, "limit": 1})
+        total_segments += segments["total"]
+    print(f"indexed: {len(docs)} documents, {total_segments} segments")
     save_state(dataset_id=ds_id, segments=total_segments)
 
 

@@ -1,3 +1,3 @@
-"""智备 ZhiBei —— 基于 LangGraph 的认证考试自适应刷题 Agent。"""
+"""智备 Dify 应用的题库导入与配置。"""
 
 __version__ = "1.0.0"

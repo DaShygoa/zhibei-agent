@@ -59,7 +59,3 @@ def classify(text: str) -> tuple[str, list[str]]:
     order = list(TOPIC_KEYWORDS)
     ranked = sorted(scores, key=lambda t: (-scores[t], order.index(t)))
     return ranked[0], ranked
-
-
-def all_topics() -> list[str]:
-    return [*TOPIC_KEYWORDS, DEFAULT_TOPIC]

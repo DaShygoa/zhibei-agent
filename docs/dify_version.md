@@ -1,6 +1,4 @@
-# 智备 Dify 版：架构与部署说明
-
-> 主演示版本。LangGraph 版（`zhibei/`）作为代码框架实现，用于对比与扩展。
+# 智备的 Dify 架构与部署
 
 ## 1. 架构
 
@@ -9,7 +7,7 @@ flowchart LR
     U[用户<br/>Dify Web App 公开链接 / Service API] --> A
 
     subgraph Agent[Dify Agent 应用 · Function Calling · 最大迭代 8]
-        A[MiMo 大模型<br/>自主决策]
+        A[对话模型<br/>自主决策]
     end
 
     A -->|工具调用| T1
@@ -27,18 +25,18 @@ flowchart LR
     end
 
     subgraph KB[知识库 · 高质量索引 · 混合检索]
-        D[(56 个文档 = 考点×题型<br/>1710 段 = 一题一段<br/>文档级元数据 topic/qtype)]
+        D[(按考点和题型分文档<br/>一题一段<br/>文档级元数据 topic/qtype)]
     end
     R1 --> D
 
-    E[Ollama bge-m3<br/>本地 GPU 嵌入] -.向量化.-> D
+    E[Ollama bge-m3<br/>本地嵌入] -.向量化.-> D
 ```
 
 ## 2. 关键设计
 
 | 问题 | 设计 |
 |---|---|
-| Dify 元数据是**文档级**，无法按分段过滤 | 按「考点 × 题型」拆成 56 个文档，每个文档带 topic/qtype 元数据；文档内用 `@@@@` 分隔，一题一段 |
+| Dify 元数据是**文档级**，无法按分段过滤 | 按「考点 × 题型」拆分文档，每个文档带 topic/qtype 元数据；文档内用 `@@@@` 分隔，一题一段 |
 | 同一检索语句总返回同一批题 | 抽题前用代码节点从考点关键词池随机挑词组成检索语句，检索 Top10 后再随机抽 n 题 |
 | 需要在对话轮次间关联同一组题 | **测验码**把试题 ID、题型与参考答案可逆编码。模型从对话里原样回传，判分工作流解码。 |
 | 抽题和判分职责分离 | 抽题结果不直接返回明文答案；判分由代码节点完成。测验码不是安全加密，应用不用于正式考试。 |
@@ -50,7 +48,9 @@ flowchart LR
 
 前置：按 [Dify 1.20.0 官方发布说明](https://github.com/langgenius/dify/releases/tag/1.20.0) 启动本机 Docker 实例，在 `http://localhost/install` 创建管理员。安装 OpenAI 兼容和 Ollama 模型插件：前者配置支持工具调用的对话模型，后者配置 `bge-m3` 嵌入（Docker Desktop 下可使用 `http://host.docker.internal:11434` 指向宿主机服务）。
 
-将仓库的 `.env.example` 复制为 `.env` 并填自己的模型配置；Dify 的模型凭据还需在控制台单独保存。通过当前 PowerShell 会话设置 `DIFY_ADMIN_EMAIL`、`DIFY_ADMIN_PASSWORD`，供部署脚本登录已配置的本机实例。不要将凭据写入仓库。
+将仓库的 `.env.example` 复制为 `.env`，令 `LLM_MODEL` 与 Dify 控制台中的对话模型名称一致。部署脚本使用工作区的默认文本嵌入模型来创建知识库，请在 Dify 控制台中将它设为 `bge-m3`。
+
+如果 Dify 使用自定义端口，在 `.env` 中设置 `DIFY_CONSOLE_BASE` 和 `DIFY_API_BASE`。例如端口为 `18080` 时，分别使用 `http://127.0.0.1:18080/console/api` 和 `http://127.0.0.1:18080/v1`。通过当前 PowerShell 会话设置 `DIFY_ADMIN_EMAIL` 和 `DIFY_ADMIN_PASSWORD` 供脚本登录。模型凭据在 Dify 控制台配置。
 
 先按 README 导入自编样例，或从自己获准使用的资料导入题库。再从仓库根目录依次运行：
 
@@ -78,7 +78,7 @@ flowchart LR
 
 | 文件 | 作用 |
 |---|---|
-| `dify/export_kb.py` | 题库 → 56 个知识库文档 + manifest |
+| `dify/export_kb.py` | 导出按考点和题型分组的知识库文档和清单 |
 | `dify/nodes/draw_prepare.py` `draw_format.py` `grade.py` | 三个代码节点源码（纯标准库，`tests/test_dify_nodes.py` 本地单测） |
 | `dify/build_dsl.py` | 生成与本机知识库绑定的 DSL 到 `dify/dsl/`；仓库中的通用模板在 `dify/templates/` |
 | `dify/setup_kb.py` `setup_apps.py` `setup_agent.py` | 通过 Dify API 自动化部署 |
@@ -88,6 +88,6 @@ flowchart LR
 
 ## 5. 已知局限
 
-- **跨会话长期记忆**：Dify Agent 应用的记忆仅限当前会话，错题本与薄弱点只在一次对话内有效（LangGraph 版用 SQLite 实现了跨会话记忆）。可扩展：工作流中用 HTTP 请求节点读写外部 KV（如 Redis）。
+- **跨会话长期记忆**：Dify Agent 应用的记忆仅限当前会话，错题与薄弱点总结基于本次对话。
 - 题库中 CANN 相关题目较少（7 题），这是题库本身的覆盖问题。
 - Dify 1.20 将该类应用标为 "Legacy Agent"；新版 Agent（beta，自带沙箱）尚不稳定，本项目选择稳定的经典 Agent。

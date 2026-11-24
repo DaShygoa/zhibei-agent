@@ -16,11 +16,12 @@ def load(name):
 prepare, fmt, grade = load("draw_prepare"), load("draw_format"), load("grade")
 
 
-def _chunks():
+def _chunks(db_path):
     from dify.export_kb import chunk_text
     from zhibei.bank import store
-    qs = [q for q in store.all_questions() if q["topic"] == "MindSpore框架"][:12]
-    return [{"content": chunk_text(q), "metadata": {}} for q in qs], {str(q["id"]): q for q in qs}
+
+    questions = store.all_questions(db_path=db_path)
+    return [{"content": chunk_text(q), "metadata": {}} for q in questions if q["topic"] == "MindSpore框架"]
 
 
 def test_prepare_topic_alias_and_qtype():
@@ -33,8 +34,8 @@ def test_prepare_topic_alias_and_qtype():
     assert r["topic_filter"] == "" and r["query"] == "量子力学"
 
 
-def test_draw_hides_answers_and_roundtrip_grade():
-    chunks, by_id = _chunks()
+def test_draw_hides_answers_and_roundtrip_grade(temp_db):
+    chunks = _chunks(temp_db)
     out = fmt.main(chunks, 4, "", "")
     assert out["count"] == 4 and out["quiz_code"].startswith("ZB-")
     assert "答案" not in out["questions"]
@@ -60,8 +61,8 @@ def test_grade_bad_inputs():
     assert fmt.main([], 3, "", "")["error"]
 
 
-def test_keyword_relevance_filter():
-    chunks, _ = _chunks()  # MindSpore 题
+def test_keyword_relevance_filter(temp_db):
+    chunks = _chunks(temp_db)
     assert "没有与" in fmt.main(chunks, 3, "", "中国古代史")["error"]
     out = fmt.main(chunks, 2, "", "MindSpore")
     assert out["error"] == "" and out["count"] == 2

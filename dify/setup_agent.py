@@ -6,7 +6,7 @@ python -m dify.setup_agent
 - 工具：zhibei_draw_quiz、zhibei_grade（工作流工具）
 - 知识库：智备真题库（由 Agent 自主决定是否检索）
 - 提示词：dify/agent_prompt.md
-结果：app_id、Web App 链接、Service API Key 写入 dify/state.json，并把 DIFY_APP_KEY 追加到 .env。
+应用 ID 和 Web App 地址写入 dify/state.json，Service API 密钥写入 .env。
 """
 from __future__ import annotations
 
@@ -15,13 +15,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from dify.console import Console  # noqa: E402
+from dify.console import CONSOLE, Console  # noqa: E402
 from dify.setup_kb import EMBED_MODEL, EMBED_PROVIDER, load_state, save_state  # noqa: E402
 from zhibei.config import settings  # noqa: E402
 
 APP_NAME = "智备 · 华为AI认证备考 Agent"
 OPENING = ("你好，我是智备 🎯 华为 ICT 认证（HCIA-AI / HCIP-AI Solution）备考教练。\n"
-           "我可以从 1710 道真题里按考点、题型抽题，帮你判分、讲解错因，并分析你的薄弱点。")
+           "我可以按考点和题型抽题。抽题后，把测验码和答案一起发给我，我会帮你判分和讲解。")
 SUGGESTED = ["考我 5 道昇腾处理器的题", "我多选老漏选，来 3 道 MindSpore 多选", "MindIE 和 MindX 有什么区别？",
              "题库里都有哪些考点？"]
 
@@ -44,11 +44,16 @@ def main() -> None:
                       "provider_name": labels[name], "tool_name": name, "tool_label": labels[name],
                       "tool_parameters": params[name], "enabled": True, "notAuthor": False})
 
+    prompt = (Path(__file__).parent / "agent_prompt.md").read_text(encoding="utf-8")
+    count = st.get("segments", 0)
+    overview = f"当前知识库有 {count:,} 道练习题。" if count else ""
+    if overview:
+        prompt = prompt.replace("# 题库概况\n", f"# 题库概况\n{overview}\n", 1)
     config = {
-        "pre_prompt": (Path(__file__).parent / "agent_prompt.md").read_text(encoding="utf-8"),
+        "pre_prompt": prompt,
         "prompt_type": "simple", "chat_prompt_config": {}, "completion_prompt_config": {},
         "user_input_form": [], "dataset_query_variable": "",
-        "opening_statement": OPENING, "suggested_questions": SUGGESTED,
+        "opening_statement": OPENING + (f"\n{overview}" if overview else ""), "suggested_questions": SUGGESTED,
         "suggested_questions_after_answer": {"enabled": False},
         "speech_to_text": {"enabled": False}, "text_to_speech": {"enabled": False},
         "retriever_resource": {"enabled": True}, "sensitive_word_avoidance": {"enabled": False},
@@ -77,14 +82,16 @@ def main() -> None:
     code = (detail.get("site") or {}).get("code") or (detail.get("site") or {}).get("access_token")
     keys = c.get(f"/apps/{app_id}/api-keys")["data"]
     key = keys[0]["token"] if keys else c.post(f"/apps/{app_id}/api-keys")["token"]
-    web_url = f"http://localhost/chat/{code}" if code else None
+    web_base = CONSOLE.removesuffix("/console/api")
+    web_url = f"{web_base}/chat/{code}" if code else None
     save_state(agent_app_id=app_id, web_url=web_url)
 
     env = ROOT / ".env"
-    lines = [l for l in env.read_text(encoding="utf-8").splitlines()
+    existing = env.read_text(encoding="utf-8").splitlines() if env.exists() else []
+    lines = [l for l in existing
              if not l.startswith(("DIFY_APP_KEY=", "DIFY_API_BASE="))]
     lines += ["", "# ===== Dify 版 Agent（eval/run_eval_dify.py 使用）=====",
-              "DIFY_API_BASE=http://localhost/v1", f"DIFY_APP_KEY={key}"]
+              f"DIFY_API_BASE={settings.dify_api_base}", f"DIFY_APP_KEY={key}"]
     env.write_text("\n".join(lines).replace("\n\n\n", "\n\n") + "\n", encoding="utf-8")
     print("app:", app_id, "\nweb app:", web_url, "\nDIFY_APP_KEY 已写入 .env")
 

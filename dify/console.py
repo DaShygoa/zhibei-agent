@@ -11,7 +11,9 @@ from pathlib import Path
 
 import requests
 
-CONSOLE = os.getenv("DIFY_CONSOLE_BASE", "http://localhost/console/api")
+from zhibei.config import settings
+
+CONSOLE = settings.dify_console_base
 CRED_FILE = Path(os.getenv("DIFY_CRED_FILE", r"E:\dify\ADMIN_CREDENTIALS.txt"))
 
 
