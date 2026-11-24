@@ -1,0 +1,380 @@
+app:
+  name: zhibei_draw_quiz
+  description: 智备抽题工具：按考点/题型/关键词从真题库抽题，返回不含答案的题目与测验码。
+  icon: 📝
+  icon_background: '#E0F2FE'
+  mode: workflow
+  use_icon_as_answer_icon: false
+dependencies: []
+kind: app
+version: 0.3.1
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      enabled: false
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    nodes:
+    - id: '1700000000001'
+      type: custom
+      position:
+        x: 0
+        y: 200
+      positionAbsolute:
+        x: 0
+        y: 200
+      width: 244
+      height: 90
+      sourcePosition: right
+      targetPosition: left
+      selected: false
+      data:
+        desc: ''
+        selected: false
+        type: start
+        title: 开始
+        variables:
+        - variable: topic
+          label: 考点（可模糊，如 CANN、MindSpore；可空）
+          type: text-input
+          required: false
+          max_length: 256
+          options: []
+        - variable: qtype
+          label: 题型（单选题/多选题/判断题/填空题；可空）
+          type: text-input
+          required: false
+          max_length: 256
+          options: []
+        - variable: keyword
+          label: 关键词（如 LoRA、达芬奇架构；可空）
+          type: text-input
+          required: false
+          max_length: 256
+          options: []
+        - variable: n
+          label: 题目数量 1~8
+          type: number
+          required: false
+          max_length: 48
+          options: []
+    - id: '1700000000002'
+      type: custom
+      position:
+        x: 300
+        y: 200
+      positionAbsolute:
+        x: 300
+        y: 200
+      width: 244
+      height: 90
+      sourcePosition: right
+      targetPosition: left
+      selected: false
+      data:
+        desc: ''
+        selected: false
+        type: code
+        title: 解析抽题条件
+        code_language: python3
+        code: "# Dify 代码节点：抽题前处理（draw_quiz 工作流第 1 个代码节点）\n# 输入：topic / qtype / keyword（均可为空）\n# 输出：query（检索语句）、topic_filter、qtype_filter（元数据过滤值，空串=不过滤）\n\
+          # 设计：知识检索按相似度排序，同一 query 总是返回同一批题。没有关键词时，\n#       从该考点的关键词池里随机挑 2 个拼成 query，让每次抽到的题不一样。\n\nTOPIC_ALIASES = {\n\
+          \    \"昇腾处理器与Atlas硬件\": [\"昇腾\", \"Atlas\", \"达芬奇架构\", \"AI Core\", \"NPU\", \"Ascend\", \"AI处理器\"],\n    \"CANN与MindX\"\
+          : [\"CANN\", \"MindX\", \"AscendCL\", \"ATC\", \"TBE\", \"算子\", \"异构计算\"],\n    \"MindSpore框架\": [\"MindSpore\"\
+          , \"张量\", \"静态图\", \"动态图\", \"Cell\", \"MindRecord\", \"自动微分\"],\n    \"推理部署与MindStudio/MindIE\": [\"MindStudio\"\
+          , \"MindIE\", \"推理\", \"量化\", \"模型转换\", \"部署\", \"剪枝\"],\n    \"大模型与生成式AI\": [\"大模型\", \"Transformer\", \"微调\",\
+          \ \"LoRA\", \"RAG\", \"提示工程\", \"多模态\", \"预训练\"],\n    \"分布式训练与AI集群\": [\"分布式\", \"并行\", \"集群\", \"RoCE\", \"通信\"\
+          , \"AllReduce\", \"带宽\"],\n    \"华为云EI与AI开发实践\": [\"华为云\", \"ModelArts\", \"OCR\", \"语音识别\", \"语音合成\", \"图像标签\"\
+          , \"HiAI\"],\n    \"深度学习基础\": [\"神经网络\", \"卷积\", \"RNN\", \"LSTM\", \"激活函数\", \"反向传播\", \"梯度\", \"损失函数\", \"过拟合\"\
+          ],\n    \"机器学习基础\": [\"机器学习\", \"监督学习\", \"聚类\", \"回归\", \"决策树\", \"支持向量机\", \"特征\", \"超参数\"],\n    \"计算机视觉与NLP\"\
+          : [\"图像\", \"目标检测\", \"自然语言\", \"文本\", \"语音\", \"知识图谱\", \"词向量\"],\n    \"TensorFlow/Keras/PyTorch\": [\"TensorFlow\"\
+          , \"Keras\", \"PyTorch\", \"Eager\"],\n    \"Python与数学基础\": [\"Python\", \"函数\", \"矩阵\", \"概率\", \"线性代数\", \"正则表达式\"\
+          ],\n    \"AI基础概念与伦理\": [\"人工智能\", \"AI发展\", \"伦理\", \"智能\", \"数据\"],\n}\nQTYPES = [\"单选题\", \"多选题\", \"判断题\", \"\
+          填空题\", \"连线题\"]\n\n\ndef main(topic: str, qtype: str, keyword: str) -> dict:\n    import random  # 放在函数内，沙箱不支持时也不影响模块加载\n\
+          \n    topic = (topic or \"\").strip()\n    qtype = (qtype or \"\").strip()\n    keyword = (keyword or \"\").strip()\n\
+          \n    # 考点模糊匹配：用户说 \"CANN\" → 标准考点 \"CANN与MindX\"\n    std_topic = \"\"\n    if topic:\n        for t, words in\
+          \ TOPIC_ALIASES.items():\n            if topic.lower() in t.lower():\n                std_topic = t\n          \
+          \      break\n            if any(topic.lower() == w.lower() for w in words):\n                std_topic = t  # 命中别名（如\
+          \ LoRA）：按考点过滤，同时保留原词做检索\n                keyword = keyword or topic\n                break\n        if not std_topic\
+          \ and not keyword:\n            keyword = topic  # 不是考点名，就当关键词用\n\n    std_qtype = \"\"\n    for q in QTYPES:\n\
+          \        if qtype and (qtype in q or q.startswith(qtype[:2])):\n            std_qtype = q\n            break\n\n\
+          \    if keyword:\n        query = keyword\n    else:\n        pool = TOPIC_ALIASES.get(std_topic) or [w for ws in\
+          \ TOPIC_ALIASES.values() for w in ws]\n        try:\n            picks = random.sample(pool, min(2, len(pool)))\n\
+          \        except Exception:\n            picks = pool[:2]\n        query = \" \".join(([std_topic] if std_topic else\
+          \ []) + picks)\n\n    return {\n        \"query\": query,\n        \"topic_filter\": std_topic,\n        \"qtype_filter\"\
+          : std_qtype,\n        \"keyword_used\": keyword,  # 供组卷节点做相关性校验；随机检索词时为空\n    }\n"
+        variables:
+        - variable: topic
+          value_selector:
+          - '1700000000001'
+          - topic
+        - variable: qtype
+          value_selector:
+          - '1700000000001'
+          - qtype
+        - variable: keyword
+          value_selector:
+          - '1700000000001'
+          - keyword
+        outputs:
+          query:
+            type: string
+            children: null
+          topic_filter:
+            type: string
+            children: null
+          qtype_filter:
+            type: string
+            children: null
+          keyword_used:
+            type: string
+            children: null
+        retry_config:
+          retry_enabled: true
+          max_retries: 1
+          retry_interval: 500
+    - id: '1700000000003'
+      type: custom
+      position:
+        x: 600
+        y: 200
+      positionAbsolute:
+        x: 600
+        y: 200
+      width: 244
+      height: 90
+      sourcePosition: right
+      targetPosition: left
+      selected: false
+      data:
+        desc: ''
+        selected: false
+        type: knowledge-retrieval
+        title: 检索真题（元数据过滤）
+        dataset_ids:
+        - REPLACE_WITH_DATASET_ID
+        query_variable_selector:
+        - '1700000000002'
+        - query
+        retrieval_mode: multiple
+        multiple_retrieval_config:
+          top_k: 10
+          score_threshold: null
+          reranking_enable: false
+          reranking_mode: weighted_score
+          weights:
+            weight_type: customized
+            vector_setting:
+              vector_weight: 0.5
+              embedding_provider_name: langgenius/ollama/ollama
+              embedding_model_name: bge-m3
+            keyword_setting:
+              keyword_weight: 0.5
+        metadata_filtering_mode: manual
+        metadata_filtering_conditions:
+          logical_operator: and
+          conditions:
+          - id: c-topic
+            name: topic
+            comparison_operator: contains
+            value: '{{#1700000000002.topic_filter#}}'
+          - id: c-qtype
+            name: qtype
+            comparison_operator: contains
+            value: '{{#1700000000002.qtype_filter#}}'
+    - id: '1700000000004'
+      type: custom
+      position:
+        x: 900
+        y: 200
+      positionAbsolute:
+        x: 900
+        y: 200
+      width: 244
+      height: 90
+      sourcePosition: right
+      targetPosition: left
+      selected: false
+      data:
+        desc: ''
+        selected: false
+        type: code
+        title: 组卷（隐藏答案+测验码）
+        code_language: python3
+        code: "# Dify 代码节点：抽题后处理（draw_quiz 工作流第 2 个代码节点）\n# 输入：chunks（知识检索结果 array[object]）、n（题数）、qtype_filter\n# 输出：questions（给用户看的题目，不含答案）、quiz_code（测验码）、count、error\n\
+          #\n# 测验码：把 [试题ID, 题型, 标准答案] 用密钥异或后 base64 编码。\n#   - Agent 只需在回复里原样展示、判分时原样传回，看不懂内容 → 不会泄露答案；\n#   - 判分工作流解码即可确定性判分，不依赖\
+          \ Agent 只有 2000 tokens 的记忆窗口。\n\nQUIZ_SECRET = \"zhibei-2026-ascend\"\nTYPE_CODE = {\"单选题\": \"S\", \"多选题\": \"\
+          M\", \"判断题\": \"J\", \"填空题\": \"F\", \"连线题\": \"L\"}\n\n\ndef encode_quiz(items: list) -> str:\n    import base64\n\
+          \    raw = \"|\".join(f\"{qid}~{TYPE_CODE.get(t, 'S')}~{ans}\" for qid, t, ans in items).encode(\"utf-8\")\n   \
+          \ key = QUIZ_SECRET.encode(\"utf-8\")\n    mixed = bytes(b ^ key[i % len(key)] for i, b in enumerate(raw))\n   \
+          \ return \"ZB-\" + base64.urlsafe_b64encode(mixed).decode(\"ascii\").rstrip(\"=\")\n\n\ndef parse_chunk(text: str)\
+          \ -> dict:\n    import re\n    head = re.search(r\"【试题ID：(\\d+)】【(.+?)】【考点：(.+?)】\", text)\n    if not head:\n \
+          \       return {}\n    q = {\"id\": head.group(1), \"qtype\": head.group(2), \"topic\": head.group(3),\n       \
+          \  \"stem\": \"\", \"options\": [], \"answer\": \"\"}\n    for line in text.splitlines()[1:]:\n        line = line.strip()\n\
+          \        if line.startswith(\"题干：\"):\n            q[\"stem\"] = line[3:]\n        elif line.startswith(\"答案：\"\
+          ):\n            q[\"answer\"] = line[3:].strip()\n        elif line.startswith(\"解析：\"):\n            break\n  \
+          \      elif re.match(r\"^([A-H]|左\\d+|右\\d+)\\.\\s\", line):\n            q[\"options\"].append(line)\n        elif\
+          \ q[\"stem\"] and not q[\"options\"]:\n            q[\"stem\"] += \" \" + line  # 多行题干\n    return q if q[\"answer\"\
+          ] else {}\n\n\ndef keyword_terms(keyword: str) -> list:\n    \"\"\"关键词 → 匹配单元：英文词整体匹配，中文拆成二元组（量子力学 → 量子/子力/力学）。\"\
+          \"\"\n    import re\n    terms = []\n    for tok in re.findall(r\"[A-Za-z0-9_+\\-.]{2,}|[一-鿿]+\", keyword or \"\"\
+          ):\n        if re.match(r\"[一-鿿]\", tok):\n            terms += [tok] if len(tok) <= 2 else [tok[i:i + 2] for i\
+          \ in range(len(tok) - 1)]\n        else:\n            terms.append(tok.lower())\n    return terms\n\n\ndef main(chunks:\
+          \ list, n: float, qtype_filter: str, keyword: str) -> dict:\n    import random\n\n    n = int(n or 5)\n    n = max(1,\
+          \ min(n, 8))\n    seen, pool = set(), []\n    for c in chunks or []:\n        content = c.get(\"content\", \"\"\
+          ) if isinstance(c, dict) else str(c)\n        q = parse_chunk(content)\n        if not q or q[\"id\"] in seen:\n\
+          \            continue\n        if qtype_filter and q[\"qtype\"] != qtype_filter:\n            continue\n       \
+          \ seen.add(q[\"id\"])\n        q[\"_text\"] = content.lower()\n        pool.append(q)\n\n    # 相关性校验：向量检索\"总能返回点什么\"\
+          ，按关键词检索时只保留真正包含关键词的题\n    terms = keyword_terms(keyword)\n    if terms and pool:\n        # 关键词拆出 3 个以上片段时至少命中 2\
+          \ 个才算相关，避免\"中国古代史\"因\"中国\"命中\"中国移动\"\n        need = 1 if len(terms) <= 2 else 2\n        scored = [(sum(t in q[\"\
+          _text\"] for t in terms), q) for q in pool]\n        hits = [q for s, q in sorted(scored, key=lambda x: -x[0]) if\
+          \ s >= need]\n        if not hits:\n            return {\"questions\": \"\", \"quiz_code\": \"\", \"count\": 0,\n\
+          \                    \"error\": f\"题库中没有与「{keyword}」相关的题目。可以换一个考点，或不指定关键词按考点抽题。\"}\n        pool = hits\n\n    if\
+          \ not pool:\n        return {\"questions\": \"\", \"quiz_code\": \"\", \"count\": 0,\n                \"error\"\
+          : \"没有检索到符合条件的题目，请放宽考点/题型条件，或换一个关键词。\"}\n    try:\n        picked = random.sample(pool, min(n, len(pool)))\n   \
+          \ except Exception:\n        picked = pool[:n]\n\n    blocks = []\n    for i, q in enumerate(picked, 1):\n     \
+          \   block = [f\"第{i}题（{q['qtype']}｜{q['topic']}）{q['stem']}\"] + q[\"options\"]\n        if q[\"qtype\"] == \"填空题\"\
+          :\n            block.append(\"（多个空用 | 分隔）\")\n        if q[\"qtype\"] == \"连线题\":\n            block.append(\"（按\
+          \ 左序号-右序号 作答，如 1-2,2-1）\")\n        blocks.append(\"\\n\".join(block))\n    code = encode_quiz([(q[\"id\"], q[\"\
+          qtype\"], q[\"answer\"]) for q in picked])\n    return {\"questions\": \"\\n\\n\".join(blocks), \"quiz_code\": code,\
+          \ \"count\": len(picked), \"error\": \"\"}\n"
+        variables:
+        - variable: chunks
+          value_selector:
+          - '1700000000003'
+          - result
+        - variable: n
+          value_selector:
+          - '1700000000001'
+          - n
+        - variable: qtype_filter
+          value_selector:
+          - '1700000000002'
+          - qtype_filter
+        - variable: keyword
+          value_selector:
+          - '1700000000002'
+          - keyword_used
+        outputs:
+          questions:
+            type: string
+            children: null
+          quiz_code:
+            type: string
+            children: null
+          count:
+            type: number
+            children: null
+          error:
+            type: string
+            children: null
+        retry_config:
+          retry_enabled: true
+          max_retries: 1
+          retry_interval: 500
+    - id: '1700000000005'
+      type: custom
+      position:
+        x: 1200
+        y: 200
+      positionAbsolute:
+        x: 1200
+        y: 200
+      width: 244
+      height: 90
+      sourcePosition: right
+      targetPosition: left
+      selected: false
+      data:
+        desc: ''
+        selected: false
+        type: end
+        title: 结束
+        outputs:
+        - variable: questions
+          value_selector:
+          - '1700000000004'
+          - questions
+          value_type: string
+        - variable: quiz_code
+          value_selector:
+          - '1700000000004'
+          - quiz_code
+          value_type: string
+        - variable: count
+          value_selector:
+          - '1700000000004'
+          - count
+          value_type: number
+        - variable: error
+          value_selector:
+          - '1700000000004'
+          - error
+          value_type: string
+    edges:
+    - id: 1700000000001-source-1700000000002-target
+      source: '1700000000001'
+      sourceHandle: source
+      target: '1700000000002'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: code
+    - id: 1700000000002-source-1700000000003-target
+      source: '1700000000002'
+      sourceHandle: source
+      target: '1700000000003'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: knowledge-retrieval
+    - id: 1700000000003-source-1700000000004-target
+      source: '1700000000003'
+      sourceHandle: source
+      target: '1700000000004'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: knowledge-retrieval
+        targetType: code
+    - id: 1700000000004-source-1700000000005-target
+      source: '1700000000004'
+      sourceHandle: source
+      target: '1700000000005'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: end
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.8

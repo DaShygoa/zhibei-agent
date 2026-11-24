@@ -1,0 +1,221 @@
+app:
+  name: zhibei_grade
+  description: 智备判分工具：根据测验码对用户答案确定性判分，返回逐题结果与多选漏选/错选诊断。
+  icon: ✅
+  icon_background: '#E0F2FE'
+  mode: workflow
+  use_icon_as_answer_icon: false
+dependencies: []
+kind: app
+version: 0.3.1
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      enabled: false
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    nodes:
+    - id: '1700000000101'
+      type: custom
+      position:
+        x: 0
+        y: 200
+      positionAbsolute:
+        x: 0
+        y: 200
+      width: 244
+      height: 90
+      sourcePosition: right
+      targetPosition: left
+      selected: false
+      data:
+        desc: ''
+        selected: false
+        type: start
+        title: 开始
+        variables:
+        - variable: quiz_code
+          label: 测验码（draw_quiz 返回的 quiz_code，ZB- 开头）
+          type: paragraph
+          required: true
+          max_length: 4000
+          options: []
+        - variable: answers
+          label: 用户答案 JSON，如 {"1":"A","2":"BC","3":"对"}
+          type: paragraph
+          required: true
+          max_length: 4000
+          options: []
+    - id: '1700000000102'
+      type: custom
+      position:
+        x: 300
+        y: 200
+      positionAbsolute:
+        x: 300
+        y: 200
+      width: 244
+      height: 90
+      sourcePosition: right
+      targetPosition: left
+      selected: false
+      data:
+        desc: ''
+        selected: false
+        type: code
+        title: 确定性判分
+        code_language: python3
+        code: "# Dify 代码节点：判分（grade_answers 工作流的代码节点）\n# 输入：quiz_code（draw_quiz 返回的测验码）、answers（用户答案，JSON 如 {\"1\":\"A\",\"\
+          2\":\"BC\"}，也兼容 \"1A 2BC 3对\"）\n# 输出：score（如 \"3/5\"）、report（逐题结果 JSON 字符串）、wrong_ids、error\n# 判分完全由代码完成：模型只负责把用户原话整理成答案，绝不自己判断对错。\n\
+          \nQUIZ_SECRET = \"zhibei-2026-ascend\"\nCODE_TYPE = {\"S\": \"单选题\", \"M\": \"多选题\", \"J\": \"判断题\", \"F\": \"填空题\"\
+          , \"L\": \"连线题\"}\nTRUE_WORDS = {\"对\", \"正确\", \"是\", \"√\", \"t\", \"true\", \"yes\", \"y\", \"✓\", \"a\"}\nFALSE_WORDS\
+          \ = {\"错\", \"错误\", \"否\", \"×\", \"x\", \"f\", \"false\", \"no\", \"n\", \"✗\", \"b\"}\n\n\ndef decode_quiz(code:\
+          \ str) -> list:\n    import base64\n    code = (code or \"\").strip()\n    if code.startswith(\"ZB-\"):\n      \
+          \  code = code[3:]\n    raw = base64.urlsafe_b64decode(code + \"=\" * (-len(code) % 4))\n    key = QUIZ_SECRET.encode(\"\
+          utf-8\")\n    text = bytes(b ^ key[i % len(key)] for i, b in enumerate(raw)).decode(\"utf-8\")\n    items = []\n\
+          \    for part in text.split(\"|\"):\n        qid, t, ans = part.split(\"~\", 2)\n        items.append({\"qid\":\
+          \ qid, \"qtype\": CODE_TYPE.get(t, \"单选题\"), \"answer\": ans})\n    return items\n\n\ndef parse_answers(answers:\
+          \ str) -> dict:\n    import json\n    import re\n    answers = (answers or \"\").strip()\n    try:\n        data\
+          \ = json.loads(answers)\n        if isinstance(data, dict):\n            return {int(re.sub(r\"\\D\", \"\", str(k))\
+          \ or 0): str(v) for k, v in data.items()}\n        if isinstance(data, list):\n            out = {}\n          \
+          \  for item in data:\n                if isinstance(item, dict) and \"no\" in item:\n                    out[int(item[\"\
+          no\"])] = str(item.get(\"answer\", \"\"))\n            return out\n    except Exception:\n        pass\n    # 兜底：\"\
+          1A 2BC 3对\" / \"1.A;2.BC\" / \"第1题A\"\n    out = {}\n    for m in re.finditer(r\"第?(\\d+)\\s*题?\\s*[.、:：=）)]?\\\
+          s*([^\\s;；]+)\", answers):\n        out[int(m.group(1))] = m.group(2)\n    return out\n\n\ndef normalize(qtype:\
+          \ str, raw: str) -> str:\n    import re\n    raw = (raw or \"\").strip()\n    if qtype == \"判断题\":\n        low\
+          \ = raw.lower().strip(\"。.！! \")\n        if low in TRUE_WORDS:\n            return \"A\"\n        if low in FALSE_WORDS:\n\
+          \            return \"B\"\n        return low.upper()\n    if qtype in (\"单选题\", \"多选题\"):\n        return \"\"\
+          .join(sorted(set(re.findall(r\"[A-H]\", raw.upper()))))\n    if qtype == \"连线题\":\n        pairs = sorted(set(re.findall(r\"\
+          (\\d+)\\s*[-—>→:：]+\\s*(\\d+)\", raw)), key=lambda p: int(p[0]))\n        return \",\".join(f\"{a}-{b}\" for a,\
+          \ b in pairs)\n    return \"|\".join(p.strip() for p in re.split(r\"[|｜；;，,、]\", raw) if p.strip())\n\n\ndef std_norm(qtype:\
+          \ str, ans: str) -> str:\n    import re\n    if qtype == \"填空题\":\n        parts = re.split(r\"[；;|]\\s*\", ans)\n\
+          \        return \"|\".join(re.sub(r\"^\\d+\\s*[、.．]\\s*\", \"\", p).strip() for p in parts if p.strip())\n    return\
+          \ normalize(qtype, ans)\n\n\ndef blank_equal(u: str, s: str) -> bool:\n    import re\n    clean = lambda x: re.sub(r\"\
+          [\\s()（）\\\"'“”]\", \"\", x).lower()\n    u, s = clean(u), clean(s)\n    return u == s or (len(s) >= 2 and s in\
+          \ u and len(u) <= len(s) + 2)\n\n\ndef main(quiz_code: str, answers: str) -> dict:\n    import json\n    try:\n\
+          \        items = decode_quiz(quiz_code)\n    except Exception:\n        return {\"score\": \"\", \"report\": \"\"\
+          , \"wrong_ids\": \"\",\n                \"error\": \"测验码无效：请原样传入 draw_quiz 返回的 quiz_code（以 ZB- 开头）。\"}\n    given\
+          \ = parse_answers(answers)\n    if not given:\n        return {\"score\": \"\", \"report\": \"\", \"wrong_ids\"\
+          : \"\",\n                \"error\": \"没有解析到答案。answers 请用 JSON，如 {\\\"1\\\":\\\"A\\\",\\\"2\\\":\\\"BC\\\"}。\"}\n\
+          \n    results, right, wrong_ids = [], 0, []\n    for no, item in enumerate(items, 1):\n        if no not in given:\n\
+          \            continue\n        qtype, std = item[\"qtype\"], std_norm(item[\"qtype\"], item[\"answer\"])\n     \
+          \   user = normalize(qtype, given[no])\n        if qtype == \"填空题\":\n            u, s = user.split(\"|\"), std.split(\"\
+          |\")\n            ok = len(u) == len(s) and all(blank_equal(a, b) for a, b in zip(u, s))\n        else:\n      \
+          \      ok = user == std\n        diag = \"\"\n        if qtype == \"多选题\" and not ok:\n            missed = \"\"\
+          .join(sorted(set(std) - set(user)))\n            extra = \"\".join(sorted(set(user) - set(std)))\n            diag\
+          \ = \"，\".join(x for x in [f\"漏选 {missed}\" if missed else \"\", f\"错选 {extra}\" if extra else \"\"] if x)\n   \
+          \     right += ok\n        if not ok:\n            wrong_ids.append(item[\"qid\"])\n        results.append({\"no\"\
+          : no, \"qid\": item[\"qid\"], \"qtype\": qtype, \"correct\": ok,\n                        \"your_answer\": given[no],\
+          \ \"standard_answer\": item[\"answer\"], \"diagnosis\": diag})\n    unanswered = [i for i in range(1, len(items)\
+          \ + 1) if i not in given]\n    report = {\"results\": results, \"unanswered\": unanswered}\n    return {\"score\"\
+          : f\"{right}/{len(results)}\", \"report\": json.dumps(report, ensure_ascii=False),\n            \"wrong_ids\": \"\
+          ,\".join(wrong_ids), \"error\": \"\"}\n"
+        variables:
+        - variable: quiz_code
+          value_selector:
+          - '1700000000101'
+          - quiz_code
+        - variable: answers
+          value_selector:
+          - '1700000000101'
+          - answers
+        outputs:
+          score:
+            type: string
+            children: null
+          report:
+            type: string
+            children: null
+          wrong_ids:
+            type: string
+            children: null
+          error:
+            type: string
+            children: null
+        retry_config:
+          retry_enabled: true
+          max_retries: 1
+          retry_interval: 500
+    - id: '1700000000103'
+      type: custom
+      position:
+        x: 600
+        y: 200
+      positionAbsolute:
+        x: 600
+        y: 200
+      width: 244
+      height: 90
+      sourcePosition: right
+      targetPosition: left
+      selected: false
+      data:
+        desc: ''
+        selected: false
+        type: end
+        title: 结束
+        outputs:
+        - variable: score
+          value_selector:
+          - '1700000000102'
+          - score
+          value_type: string
+        - variable: report
+          value_selector:
+          - '1700000000102'
+          - report
+          value_type: string
+        - variable: wrong_ids
+          value_selector:
+          - '1700000000102'
+          - wrong_ids
+          value_type: string
+        - variable: error
+          value_selector:
+          - '1700000000102'
+          - error
+          value_type: string
+    edges:
+    - id: 1700000000101-source-1700000000102-target
+      source: '1700000000101'
+      sourceHandle: source
+      target: '1700000000102'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: code
+    - id: 1700000000102-source-1700000000103-target
+      source: '1700000000102'
+      sourceHandle: source
+      target: '1700000000103'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: end
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.8
